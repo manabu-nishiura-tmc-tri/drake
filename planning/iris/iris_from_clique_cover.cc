@@ -10,6 +10,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <iostream>
 
 #include <common_robotics_utilities/parallelism.hpp>
 
@@ -17,6 +18,7 @@
 #include "drake/common/text_logging.h"
 #include "drake/geometry/optimization/iris.h"
 #include "drake/planning/collision_checker.h"
+#include "drake/planning/iris/iris_zo.h"
 #include "drake/planning/scene_graph_collision_checker.h"
 #include "drake/planning/visibility_graph.h"
 #include "drake/solvers/gurobi_solver.h"
@@ -235,8 +237,24 @@ std::queue<HPolyhedron> IrisWorker(
     checker.UpdatePositions(iris_options.starting_ellipse->center(),
                             builder_id);
     log()->debug("Iris builder thread {} is constructing a set.", builder_id);
-    ret.emplace(IrisInConfigurationSpace(
-        checker.plant(), checker.plant_context(builder_id), iris_options));
+
+    // Instead of calling IrisInConfigurationSpace, we now compute the region using IrisZo.
+    {
+      // Determine the configuration space dimension from the plant.
+      const int config_dim = checker.plant().num_positions();
+      // Define the domain as a box with joint limits [-pi, pi] for each joint.
+      Eigen::VectorXd lower = Eigen::VectorXd::Constant(config_dim, -M_PI);
+      Eigen::VectorXd upper = Eigen::VectorXd::Constant(config_dim, M_PI);
+      auto domain = drake::geometry::optimization::HPolyhedron::MakeBox(lower, upper);
+      // Use default IrisZo options.
+      drake::planning::IrisZoOptions zo_options;
+      // Compute the collision-free region using IrisZo.
+      ret.emplace(drake::planning::IrisZo(checker, *(iris_options.starting_ellipse),
+                                          domain, zo_options));
+    }
+
+    //ret.emplace(IrisInConfigurationSpace(
+    //    checker.plant(), checker.plant_context(builder_id), iris_options));
     log()->debug("Iris builder thread {} has constructed a set.", builder_id);
 
     current_clique = computed_cliques->pop();
@@ -331,6 +349,8 @@ void IrisInConfigurationSpaceFromCliqueCover(
         max_clique_solver_ptr) {
   DRAKE_THROW_UNLESS(options.coverage_termination_threshold > 0);
   DRAKE_THROW_UNLESS(options.iteration_limit > 0);
+
+  std::cout<<"This is VCC loop in local Drake source."<<std::endl;
 
   // Note: Even though the iris_options.bounding_region may be provided,
   // IrisInConfigurationSpace (currently) requires finite joint limits.
