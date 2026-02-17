@@ -17,7 +17,8 @@ namespace planning {
  *
  * @experimental
  * @see IrisZo for more details.
- **/
+ *
+ * @ingroup planning_iris */
 class IrisZoOptions {
  public:
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(IrisZoOptions);
@@ -33,7 +34,7 @@ class IrisZoOptions {
 
   IrisZoOptions() = default;
 
-  /** Options pertaining to the sampling and temrination conditions. */
+  /** Options pertaining to the sampling and termination conditions. */
   CommonSampledIrisOptions sampled_iris_options{};
 
   /** Maximum number of bisection steps. */
@@ -62,7 +63,7 @@ produced polytope P is probabilistically collision-free in the sense that one
 gets to control the probability δ that the fraction of the volume-in-collision
 is larger than ε
 
-Pr[λ(P\Cfree)/λ(P) > ε] ⋞ δ.
+Pr[λ(P\Cfree)/λ(P) > ε] ≤ δ.
 
 @param starting_ellipsoid provides the initial ellipsoid around which to grow
 the region. This is typically a small ball around a collision-free
@@ -89,7 +90,8 @@ of the user-specified constraints in `options.prog_with_additional_constraints`.
 @note This can be a long running function that needs to solve many QPs. If you
 have a solver which requires a license, consider acquiring the license before
 solving this function. See AcquireLicense for more details.
-*/
+
+@ingroup planning_iris */
 
 geometry::optimization::HPolyhedron IrisZo(
     const CollisionChecker& checker,

@@ -15,6 +15,7 @@ drake_cc_package_library(
     deps = [
         ":iris_common",
         ":iris_from_clique_cover",
+        ":iris_np2",
         ":iris_zo",
     ],
 )
@@ -32,6 +33,8 @@ drake_cc_library(
         "//planning:visibility_graph",
         "//planning/graph_algorithms:max_clique_solver_base",
         "//planning/graph_algorithms:max_clique_solver_via_greedy",
+        "//planning/iris:iris_np2",
+        "//planning/iris:iris_zo",
         "//solvers:gurobi_solver",
         "//solvers:mosek_solver",
     ],
@@ -47,8 +50,14 @@ drake_cc_library(
     deps = [
         "//common:name_value",
         "//geometry:meshcat",
+        "//geometry/optimization:convex_set",
         "//multibody/rational:rational_forward_kinematics",
+        "//planning:collision_checker",
         "//solvers:mathematical_program",
+        "//solvers:solve",
+    ],
+    implementation_deps = [
+        "@common_robotics_utilities_internal//:common_robotics_utilities",
     ],
 )
 
@@ -69,6 +78,22 @@ drake_cc_library(
         "//solvers:mosek_solver",
         "//solvers:osqp_solver",
         "//solvers:solve",
+        "@common_robotics_utilities_internal//:common_robotics_utilities",
+    ],
+)
+
+drake_cc_library(
+    name = "iris_np2",
+    srcs = ["iris_np2.cc"],
+    hdrs = ["iris_np2.h"],
+    deps = [
+        ":iris_common",
+        "//geometry/optimization:convex_set",
+        "//geometry/optimization:iris_internal",
+        "//planning:scene_graph_collision_checker",
+        "//solvers",
+    ],
+    implementation_deps = [
         "@common_robotics_utilities_internal//:common_robotics_utilities",
     ],
 )
@@ -114,6 +139,8 @@ drake_cc_googletest(
     tags = [
         "no_asan",
         "no_lsan",
+        # TODO(#22978) Re-enable this if possible.
+        "no_memcheck",
     ],
     deps = [
         ":iris_test_utilities",
@@ -121,12 +148,33 @@ drake_cc_googletest(
         "//common/symbolic:expression",
         "//common/test_utilities:expect_throws_message",
         "//common/test_utilities:maybe_pause_for_user",
+        "//common/yaml",
         "//geometry:meshcat",
         "//geometry/test_utilities:meshcat_environment",
         "//multibody/inverse_kinematics",
         "//multibody/rational:rational_forward_kinematics",
         "//planning:robot_diagram_builder",
         "//planning:scene_graph_collision_checker",
+        "//solvers",
+    ],
+)
+
+drake_cc_googletest(
+    name = "iris_np2_test",
+    timeout = "moderate",
+    data = ["//multibody/parsing:test_models"],
+    num_threads = 2,
+    shard_count = 4,
+    tags = [
+        "no_asan",
+        "no_lsan",
+    ],
+    deps = [
+        ":iris_np2",
+        ":iris_test_utilities",
+        "//common/symbolic:expression",
+        "//common/test_utilities:expect_throws_message",
+        "//common/yaml",
         "//solvers",
     ],
 )
