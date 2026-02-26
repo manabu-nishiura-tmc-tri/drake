@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <future>
 #include <limits>
@@ -499,21 +500,53 @@ void IrisInConfigurationSpaceFromCliqueCover(
          num_iterations < options.iteration_limit) {
     log()->info("IrisFromCliqueCover Iteration {}/{}", num_iterations + 1,
                 options.iteration_limit);
+    auto phase_start = std::chrono::steady_clock::now();
     Eigen::MatrixXd points(domain.ambient_dimension(),
                            num_points_per_visibility_round);
-    for (int i = 0; i < points.cols(); ++i) {
-      do {
+    const int kMaxAttemptsPerPoint = 1000;
+    int num_sampled = 0;
+    for (int i = 0; i < num_points_per_visibility_round; ++i) {
+      int attempts = 0;
+      bool found = false;
+      while (attempts < kMaxAttemptsPerPoint) {
         last_polytope_sample =
             domain.UniformSample(generator, last_polytope_sample);
-      } while (
-          // While the last polytope sample is in collision.
-          !checker.CheckConfigCollisionFree(last_polytope_sample) ||
-          // While the last polytope sample is in any of the sets.
-          std::any_of(sets->begin(), sets->end(),
-                      [&last_polytope_sample](const HPolyhedron& set) -> bool {
-                        return set.PointInSet(last_polytope_sample);
-                      }));
-      points.col(i) = last_polytope_sample;
+        ++attempts;
+        if (checker.CheckConfigCollisionFree(last_polytope_sample) &&
+            !std::any_of(
+                sets->begin(), sets->end(),
+                [&last_polytope_sample](const HPolyhedron& set) -> bool {
+                  return set.PointInSet(last_polytope_sample);
+                })) {
+          points.col(num_sampled) = last_polytope_sample;
+          ++num_sampled;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        log()->info(
+            "  Could not find collision-free point after {} attempts. "
+            "Stopping sampling early with {} points.",
+            kMaxAttemptsPerPoint, num_sampled);
+        break;
+      }
+    }
+    points.conservativeResize(Eigen::NoChange, num_sampled);
+    {
+      auto elapsed = std::chrono::steady_clock::now() - phase_start;
+      log()->info("  Sampled {} collision-free points in {:.2f}s",
+                  num_sampled,
+                  std::chrono::duration<double>(elapsed).count());
+    }
+    if (num_sampled < minimum_clique_size) {
+      log()->warn(
+          "  Only sampled {} points (need at least {} for a clique). "
+          "Skipping this VCC iteration.",
+          num_sampled, minimum_clique_size);
+      ++num_iterations;
+      num_points_per_visibility_round *= 2;
+      continue;
     }
 
     Meshcat* meshcat = GetMeshcatFromOptions(options.iris_options);
@@ -530,8 +563,15 @@ void IrisInConfigurationSpaceFromCliqueCover(
       }
     }
 
+    phase_start = std::chrono::steady_clock::now();
     Eigen::SparseMatrix<bool> visibility_graph =
         VisibilityGraph(checker, points, max_collision_checker_parallelism);
+    {
+      auto elapsed = std::chrono::steady_clock::now() - phase_start;
+      log()->info("  Built visibility graph ({} edges) in {:.2f}s",
+                  visibility_graph.nonZeros() / 2,
+                  std::chrono::duration<double>(elapsed).count());
+    }
     // Reserve more space for the newly built sets. Typically, we won't get
     // this worst case number of new cliques, so we only reserve half of the
     // worst case.
@@ -541,6 +581,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
                       2);
 
     // Now solve the max clique cover and build new sets.
+    phase_start = std::chrono::steady_clock::now();
     int num_new_sets{0};
     // The computed cliques from the max clique solver. These will get pulled
     // off the queue by the set builder workers to build the sets.
@@ -601,6 +642,14 @@ void IrisInConfigurationSpaceFromCliqueCover(
           ++num_new_sets;
         }
       }
+    }
+    {
+      auto elapsed = std::chrono::steady_clock::now() - phase_start;
+      log()->info("  Clique cover + IRIS grew {} new regions in {:.2f}s "
+                  "(total: {})",
+                  num_new_sets,
+                  std::chrono::duration<double>(elapsed).count(),
+                  ssize(*sets));
     }
     log()->debug(
         "{} new sets added in IrisFromCliqueCover at iteration {}. Total sets "
